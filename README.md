@@ -1,5 +1,5 @@
 # AlbumReleaseDate
-An extension developed for leacy [Spicetify](https://github.com/khanhas/spicetify-cli/) that adds specific release dates to albums/eps/singles, under the artist name
+An extension developed for legacy [Spicetify](https://github.com/khanhas/spicetify-cli/) that adds specific release dates to albums/eps/singles, under the artist name.
 
 ![Demo Gif](demo.gif "Demo")
 
