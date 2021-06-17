@@ -1,7 +1,7 @@
 // NAME: AlbumReleaseDate
 // AUTHOR: elijaholmos
 // DESCRIPTION: Changes the album/ep/single release dates to display the exact date of release, if avaiable
-// VERSION: 1.0.0
+// VERSION: 1.0.1
 
 // Backdoor way of loading in Luxon CDN
 const script = document.createElement('script');
@@ -16,12 +16,12 @@ document.head.appendChild(script);
     };
 
     // -------- Begin code --------
-    if(!Spicetify.CosmosAPI || document.readyState !== 'complete' || !luxon) {
+    if(!Spicetify.CosmosAPI || !document.querySelector('#mount-album') || !luxon) {
         setTimeout(AlbumReleaseDate, 500);
         return;
     }
     const { DateTime } = luxon; //extract DateTime class from luxon library
-    const VERSION = '1.0.0';    //extension version
+    const VERSION = '1.0.1';    //extension version
 
     console.log(`Running AlbumReleaseDate v${VERSION}`);    //log current version for debugging purposes
 
@@ -44,27 +44,49 @@ document.head.appendChild(script);
         });
     };
 
-    // Calls backend functions and modifies frontend after receiving results
-    const updateAlbumMetadata = async function () {
-        const el = document.querySelector("#mount-album");
-        if(!el?.classList?.contains('active')) return;
+    /**
+     * Calls backend functions and modifies frontend after receiving results
+     * @param {Node} el 
+     * @returns {Promise<Node>} `el` passed when first called
+     */
+    const updateAlbumMetadata = function (el) {
+        return new Promise(async (resolve, reject) => {
+            if(!el) return reject('No element was passed into updateAlbumMetadata');
+            //to prevent duplicate injection
+            if(el.hasAttribute('data-injected-album-release'))
+                return reject('Element already has attribute data-injected-album-release'); 
 
-        const album_uri = el.querySelector('.AlbumHeader').getAttribute('data-ta-album-uri');
-        if(!album_uri || !album_uri?.startsWith('spotify:album:')) return;
+            const album_uri = el.querySelector('.AlbumHeader').getAttribute('data-ta-album-uri');
+            if(!album_uri || !album_uri?.startsWith('spotify:album:')) return reject('Could not extract an album uri from .AlbumHeader');
 
-        const album = await getAlbumInfo(album_uri);
-        if(!album.month || !album.day) return;  //some albums don't have days/months, DateTime will default those vals to Jan 1 if we don't return
-        const formatted_date = DateTime.local(album.year, album.month, album.day).toFormat(CONFIG.DATE_FORMAT);
+            const album = await getAlbumInfo(album_uri);
+            if(!album.month || !album.day) return resolve(el);  //some albums don't have days/months, DateTime will default those vals to Jan 1 if we don't return
+            const formatted_date = DateTime.local(album.year, album.month, album.day).toFormat(CONFIG.DATE_FORMAT);
 
-        const new_html = el.querySelector('.AlbumMetaInfo').innerHTML.replace(album.year, formatted_date);
-        el.querySelector('.AlbumMetaInfo').innerHTML = new_html;
-        return;
+            //update html
+            const new_html = el.querySelector('.AlbumMetaInfo').innerHTML.replace(album.year, formatted_date);
+            el.querySelector('.AlbumMetaInfo').innerHTML = new_html;
+            el.setAttribute('data-injected-album-release', 'true'); //to prevent duplicate injection
+            return resolve(el);
+        });
     };
 
-    window.addEventListener('message', (msg) => {
-        if(msg?.data?.type !== 'notify_loaded') return;
-        if(msg.data.pageId !== 'album') return;
+    
+    //watch for changes on the album page
+    new MutationObserver(records => {
+        const new_node = records.filter(r => !!r.addedNodes.length)?.pop()?.addedNodes[0];
+        if(!new_node) return;
+        new_node.parentElement.classList.remove('active');
+        updateAlbumMetadata(new_node)
+            .then(el => el.parentElement.classList.add('active'))
+            .catch(err => {
+                console.error(err);
+                new_node.parentElement.classList.add('active');
+            });
+    }).observe(document.querySelector('#mount-album'), { childList: true });
 
-        updateAlbumMetadata();
-    });
+    //on spotify load, if album page is active, replace its children with its children
+    //this will trigger MutationObserver
+    if(document.querySelector('#mount-album').classList.contains('active'))
+        document.querySelector('#mount-album').replaceChildren(document.querySelector('#mount-album').firstChild);
 })();
